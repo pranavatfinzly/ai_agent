@@ -6,9 +6,7 @@ our code runs them, and a human approves any money transfer.
 | File | Purpose |
 |------|---------|
 | `tools.py` | Mock bank data, three tools, and their JSON schemas |
-| `agent.py` | Finished agent (reference) |
-| `agent_live.py` | Same file with the loop as TODOs, for live coding |
-| `demo_script.md` | The 4 demo prompts in order |
+| `agent.py` | The agent: loop, guardrails, approval prompt, chat memory |
 
 ## Setup
 
@@ -18,7 +16,41 @@ cp .env.example .env        # then paste your key from console.groq.com
 python agent.py
 ```
 
-To change the model, edit `MODEL` at the top of `agent.py`.
+Type `quit` or `exit` to leave. To change the model, edit `MODEL`
+at the top of `agent.py` (default `openai/gpt-oss-20b`).
+
+## How it works
+
+- **Tools**: `get_balance`, `get_transactions`, `transfer_money`,
+  backed by an in-memory mock DB (resets every run).
+- **Loop**: each turn calls the model with the tool schemas, runs any
+  tool calls, feeds results back, and repeats until the model answers
+  in plain text. Capped at `MAX_STEPS = 5` per turn.
+- **Memory**: one message list is kept for the whole chat, so
+  follow-ups like "send him another $20" work across turns.
+- **Guardrails**: transfers are checked in code before a human sees
+  them. Money may only leave `ACC-1001`; unknown accounts, same-account
+  transfers, non-positive amounts, and insufficient funds are blocked.
+- **Human approval**: every valid transfer shows the amount and both
+  owners' names and waits for `y/n`.
+
+## Mock accounts
+
+| Account | Owner | Starting balance |
+|---------|-------|------------------|
+| `ACC-1001` | Pranav (the user) | $5,250.00 |
+| `ACC-2002` | Bob | $820.50 |
+| `ACC-3003` | Charlie | $1,340.75 |
+
+## Try it
+
+```
+What's my balance?
+Show my last 3 transactions.
+Send Bob $50.
+Send him another $20.
+Move $100 from Charlie's account to mine.   # blocked by guardrail
+```
 
 ## If the API fails on stage
 
