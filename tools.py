@@ -2,7 +2,7 @@
 
 MOCK_DB = {
     "ACC-1001": {
-        "owner": "Alice",
+        "owner": "Pranav",
         "balance": 5250.00,
         "transactions": [
             {"date": "2026-09-01", "desc": "Salary", "amount": 4000.00},
@@ -29,6 +29,20 @@ MOCK_DB = {
             {"date": "2026-09-28", "desc": "Pharmacy", "amount": -18.25},
         ],
     },
+    "ACC-3003": {
+        "owner": "Charlie",
+        "balance": 1340.75,
+        "transactions": [
+            {"date": "2026-09-01", "desc": "Salary", "amount": 2200.00},
+            {"date": "2026-09-05", "desc": "Rent", "amount": -950.00},
+            {"date": "2026-09-09", "desc": "Groceries", "amount": -88.60},
+            {"date": "2026-09-13", "desc": "Internet bill", "amount": -49.99},
+            {"date": "2026-09-17", "desc": "Cinema", "amount": -24.00},
+            {"date": "2026-09-21", "desc": "Sold old bike", "amount": 150.00},
+            {"date": "2026-09-25", "desc": "Fuel", "amount": -61.40},
+            {"date": "2026-09-29", "desc": "Bakery", "amount": -12.30},
+        ],
+    },
 }
 
 
@@ -49,17 +63,28 @@ def get_transactions(account_id, limit=5):
     return {"account_id": account_id, "transactions": recent}
 
 
-def transfer_money(from_account, to_account, amount):
+def check_transfer(from_account, to_account, amount):
+    """Return an error dict if the transfer can't happen, else None."""
     amount = float(amount)
     if from_account not in MOCK_DB:
         return {"error": f"Account {from_account} not found"}
     if to_account not in MOCK_DB:
         return {"error": f"Account {to_account} not found"}
+    if from_account == to_account:
+        return {"error": "Cannot transfer to the same account"}
     if amount <= 0:
         return {"error": "Amount must be positive"}
     if MOCK_DB[from_account]["balance"] < amount:
         return {"error": "Insufficient funds"}
+    return None
 
+
+def transfer_money(from_account, to_account, amount):
+    error = check_transfer(from_account, to_account, amount)
+    if error:
+        return error
+
+    amount = float(amount)
     MOCK_DB[from_account]["balance"] -= amount
     MOCK_DB[to_account]["balance"] += amount
     return {

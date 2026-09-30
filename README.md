@@ -28,7 +28,7 @@ To change the model, edit `MODEL` at the top of `agent.py`.
   Groq key in your notes and swap it into `.env`.
 - **Model not found / deprecated**: set `MODEL` to another tool-calling
   model listed at console.groq.com/docs/models
-  (e.g. `openai/gpt-oss-20b`).
+  (e.g. `openai/gpt-oss-120b`).
 - **SSL / certificate error** (corporate networks like Zscaler):
   `truststore` in `agent.py` already handles this by using the
   Windows certificate store. Make sure `pip install -r
