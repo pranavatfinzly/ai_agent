@@ -7,11 +7,15 @@ import truststore
 from dotenv import load_dotenv
 from groq import APIError, Groq
 
-from tools import MOCK_DB, TOOL_REGISTRY, TOOL_SCHEMAS, check_transfer
+from tools import (MOCK_DB, TOOL_REGISTRY, TOOL_SCHEMAS, check_transfer,
+                   find_account)
 
 MODEL = "openai/gpt-oss-20b"
 MAX_STEPS = 5
-USER_ACCOUNT = "ACC-1001"  # money may only leave this account
+
+# Who the user is. Set by identify_user(); until then no other tool
+# may run, and money may only ever leave this account.
+user_account = None
 
 truststore.inject_into_ssl()  # trust the OS certificate store
 load_dotenv()
@@ -22,6 +26,15 @@ client = Groq(timeout=20, max_retries=1)
 # The prompt only steers the model; it enforces nothing. The real
 # safety checks are in code: check_guardrails() and ask_approval().
 SYSTEM_PROMPT = """You are a helpful banking assistant.
+
+Identifying the user:
+- Before doing anything else, ask the user for their name.
+- Call identify_user only with a name the user actually gave you.
+  Only help once it succeeds.
+- If it fails, say the name was not found and ask again.
+- The account identify_user returns is the user's own account. Use it
+  whenever the user says "my" or "mine".
+- To get another person's account ID from their name, call find_account.
 
 Rules:
 - Always use the provided tools to get balances, transactions, or make
@@ -36,19 +49,56 @@ Rules:
 - Reply in plain ASCII text. No markdown, tables, or emoji.
 - Keep answers short.
 
-How transfers work:
-- Money can only be sent from Pranav's account, ACC-1001.
-- The app checks every transfer, then asks Pranav to approve it.
+How access works:
+- The user can only view the balance and transactions of their own
+  account.
+- Money can only be sent from the user's own account.
+- The app checks every transfer, then asks the user to approve it.
   You cannot skip or override these checks.
 """
 
+IDENTIFY_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "identify_user",
+        "description": "Identify who the user is from their name. "
+                       "Must succeed before any other tool can be used.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The user's name"},
+            },
+            "required": ["name"],
+        },
+    },
+}
+ALL_SCHEMAS = TOOL_SCHEMAS + [IDENTIFY_SCHEMA]
 
-def check_guardrails(args):
-    """Return an error dict if the transfer must be blocked, else None."""
-    if args["from_account"] != USER_ACCOUNT:
-        return {"error": f"You can only send money from your own "
-                         f"account, {USER_ACCOUNT}."}
-    return check_transfer(**args)
+
+def identify_user(name):
+    """Remember who the user is. Can only be set once per session."""
+    global user_account
+    if user_account is not None:
+        owner = MOCK_DB[user_account]["owner"]
+        return {"error": f"Already identified as {owner}."}
+    result = find_account(name)
+    if "error" not in result:
+        user_account = result["account_id"]
+    return result
+
+
+def check_guardrails(name, args):
+    """Return an error dict if the tool call must be blocked, else None."""
+    if name in ("get_balance", "get_transactions"):
+        if args["account_id"] != user_account:
+            return {"error": f"You can only view your own account, "
+                             f"{user_account}."}
+    if name == "transfer_money":
+        if args["from_account"] != user_account:
+            return {"error": f"You can only send money from your own "
+                             f"account, {user_account}."}
+        return check_transfer(**args)
+    return None
 
 
 def ask_approval(args):
@@ -75,7 +125,7 @@ def run_agent(messages):
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            tools=TOOL_SCHEMAS,
+            tools=ALL_SCHEMAS,
         )
         message = response.choices[0].message
 
@@ -101,14 +151,21 @@ def run_agent(messages):
             print(f"  TOOL CALL: {name}")
             print(f"  ARGS:      {args}")
 
-            # 5. Guardrails: block invalid transfers before bothering
-            #    the human, then a human must approve any money movement.
-            error = None
-            if name == "transfer_money":
-                error = check_guardrails(args)
-                if error is None and not ask_approval(args):
+            # 5. Guardrails: nothing runs until the user is identified,
+            #    and users may only touch their own account. Invalid
+            #    transfers are blocked before bothering the human, then
+            #    a human must approve any money movement.
+            if name == "identify_user":
+                result = identify_user(**args)
+            elif user_account is None:
+                result = {"error": "User not identified. Ask for their "
+                                   "name and call identify_user first."}
+            else:
+                error = check_guardrails(name, args)
+                if (error is None and name == "transfer_money"
+                        and not ask_approval(args)):
                     error = {"error": "User declined. Transfer cancelled."}
-            result = error or TOOL_REGISTRY[name](**args)
+                result = error or TOOL_REGISTRY[name](**args)
             print(f"  RESULT:    {result}")
 
             # 6. Send the result back, tagged with the call's id.

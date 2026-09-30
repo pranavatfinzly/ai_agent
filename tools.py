@@ -46,6 +46,14 @@ MOCK_DB = {
 }
 
 
+def find_account(name):
+    """Look up an account by its owner's name (case-insensitive)."""
+    for account_id, account in MOCK_DB.items():
+        if account["owner"].lower() == name.strip().lower():
+            return {"account_id": account_id, "owner": account["owner"]}
+    return {"error": f"No account found for '{name}'"}
+
+
 def get_balance(account_id):
     account = MOCK_DB.get(account_id)
     if account is None:
@@ -97,6 +105,23 @@ def transfer_money(from_account, to_account, amount):
 
 
 TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "find_account",
+            "description": "Find a person's account ID from their name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The account owner's name",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -157,6 +182,7 @@ TOOL_SCHEMAS = [
 ]
 
 TOOL_REGISTRY = {
+    "find_account": find_account,
     "get_balance": get_balance,
     "get_transactions": get_transactions,
     "transfer_money": transfer_money,
