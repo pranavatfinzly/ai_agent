@@ -19,18 +19,28 @@ load_dotenv()
 # blip instead of waiting 60s x 3 attempts.
 client = Groq(timeout=20, max_retries=1)
 
+# The prompt only steers the model; it enforces nothing. The real
+# safety checks are in code: check_guardrails() and ask_approval().
 SYSTEM_PROMPT = """You are a helpful banking assistant.
-The user is Pranav, account ACC-1001.
-Pranav's friend Bob has account ACC-2002.
-Pranav's friend Charlie has account ACC-3003.
 
 Rules:
+- Always use the provided tools to get balances, transactions, or make
+  transfers. Never guess or invent account data.
+- If the user hasn't given an account ID you need, ask for it.
+- Before any transfer, state the amount and the accounts involved.
+- Keep answers short and clear
 - Always use a tool to look up balances and transactions.
 - Never invent account numbers, balances, or amounts.
 - If a tool returns an error, explain it to the user plainly.
-- If the user rejects a transfer, confirm it was cancelled.
+- If a transfer is declined, confirm it was cancelled.
 - Reply in plain ASCII text. No markdown, tables, or emoji.
-- Keep answers short."""
+- Keep answers short.
+
+How transfers work:
+- Money can only be sent from Pranav's account, ACC-1001.
+- The app checks every transfer, then asks Pranav to approve it.
+  You cannot skip or override these checks.
+"""
 
 
 def check_guardrails(args):
